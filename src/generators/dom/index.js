@@ -7,10 +7,11 @@ import removeObjectKey from '../../utils/removeObjectKey.js';
 import visitors from './visitors/index.js';
 import Generator from '../Generator.js';
 import * as shared from '../../shared/index.js';
+import { getGlobalAlias, getUniqueLocalAliasMaker } from '../shared/utils/aliaser.js';
 
 class DomGenerator extends Generator {
-	constructor ( parsed, source, name, names, visitors, options ) {
-		super( parsed, source, name, names, visitors, options );
+	constructor ( parsed, source, name, visitors, options ) {
+		super( parsed, source, name, visitors, options );
 		this.renderers = [];
 		this.uses = new Set();
 
@@ -117,7 +118,7 @@ class DomGenerator extends Generator {
 			target: 'target',
 			localElementDepth: 0,
 			builders: getBuilders(),
-			getUniqueName: this.getUniqueNameMaker()
+			getUniqueName: getUniqueLocalAliasMaker( this.params )
 		});
 
 		// walk the children here
@@ -136,15 +137,15 @@ class DomGenerator extends Generator {
 
 		this.uses.add( name );
 
-		return this.alias( name );
+		return getGlobalAlias( name );
 	}
 }
 
-export default function dom ( parsed, source, options, names ) {
+export default function dom ( parsed, source, options ) {
 	const format = options.format || 'es';
 	const name = options.name || 'SvelteComponent';
 
-	const generator = new DomGenerator( parsed, source, name, names, visitors, options );
+	const generator = new DomGenerator( parsed, source, name, visitors, options );
 
 	const { computations, defaultExport, templateProperties } = generator.parseJs();
 
@@ -192,7 +193,7 @@ export default function dom ( parsed, source, options, names ) {
 	}
 
 	generator.push({
-		name: generator.alias( 'renderMainFragment' ),
+		name: getGlobalAlias( 'renderMainFragment' ),
 		namespace,
 		target: 'target',
 		localElementDepth: 0,
@@ -206,7 +207,7 @@ export default function dom ( parsed, source, options, names ) {
 		listNames: new Map(),
 
 		builders: getBuilders(),
-		getUniqueName: generator.getUniqueNameMaker()
+		getUniqueName: getUniqueLocalAliasMaker( [ 'root' ] )
 	});
 
 	parsed.html.children.forEach( node => generator.visit( node ) );
@@ -236,18 +237,18 @@ export default function dom ( parsed, source, options, names ) {
 		computations.forEach( ({ key, deps }) => {
 			builder.addBlock( deindent`
 				if ( isInitial || ${deps.map( dep => `( '${dep}' in newState && typeof state.${dep} === 'object' || state.${dep} !== oldState.${dep} )` ).join( ' || ' )} ) {
-					state.${key} = newState.${key} = ${generator.alias( 'template' )}.computed.${key}( ${deps.map( dep => `state.${dep}` ).join( ', ' )} );
+					state.${key} = newState.${key} = ${getGlobalAlias( 'template' )}.computed.${key}( ${deps.map( dep => `state.${dep}` ).join( ', ' )} );
 				}
 			` );
 		});
 
 		builders.main.addBlock( deindent`
-			function ${generator.alias( 'applyComputations' )} ( state, newState, oldState, isInitial ) {
+			function ${getGlobalAlias( 'applyComputations' )} ( state, newState, oldState, isInitial ) {
 				${builder}
 			}
 		` );
 
-		builders._set.addLine( `${generator.alias( 'applyComputations' )}( this._state, newState, oldState, false )` );
+		builders._set.addLine( `${getGlobalAlias( 'applyComputations' )}( this._state, newState, oldState, false )` );
 	}
 
 	// TODO is the `if` necessary?
@@ -263,13 +264,13 @@ export default function dom ( parsed, source, options, names ) {
 
 	 if ( parsed.css && options.css !== false ) {
 		builders.main.addBlock( deindent`
-			var ${generator.alias( 'addedCss' )} = false;
-			function ${generator.alias( 'addCss' )} () {
+			var ${getGlobalAlias( 'addedCss' )} = false;
+			function ${getGlobalAlias( 'addCss' )} () {
 				var style = ${generator.helper( 'createElement' )}( 'style' );
 				style.textContent = ${JSON.stringify( processCss( parsed, generator.code ) )};
 				${generator.helper( 'appendNode' )}( style, document.head );
 
-				${generator.alias( 'addedCss' )} = true;
+				${getGlobalAlias( 'addedCss' )} = true;
 			}
 		` );
 	}
@@ -280,7 +281,7 @@ export default function dom ( parsed, source, options, names ) {
 	builders.init.addLine( `this._torndown = false;` );
 
 	if ( parsed.css && options.css !== false ) {
-		builders.init.addLine( `if ( !${generator.alias( 'addedCss' )} ) ${generator.alias( 'addCss' )}();` );
+		builders.init.addLine( `if ( !${getGlobalAlias( 'addedCss' )} ) ${getGlobalAlias( 'addCss' )}();` );
 	}
 
 	if ( generator.hasComponents ) {
@@ -290,7 +291,7 @@ export default function dom ( parsed, source, options, names ) {
 	if ( generator.hasComplexBindings ) {
 		builders.init.addBlock( deindent`
 			this._bindings = [];
-			this._fragment = ${generator.alias( 'renderMainFragment' )}( this._state, this );
+			this._fragment = ${getGlobalAlias( 'renderMainFragment' )}( this._state, this );
 			if ( options.target ) this._fragment.mount( options.target, null );
 			while ( this._bindings.length ) this._bindings.pop()();
 		` );
@@ -298,7 +299,7 @@ export default function dom ( parsed, source, options, names ) {
 		builders._set.addLine( `while ( this._bindings.length ) this._bindings.pop()();` );
 	} else {
 		builders.init.addBlock( deindent`
-			this._fragment = ${generator.alias( 'renderMainFragment' )}( this._state, this );
+			this._fragment = ${getGlobalAlias( 'renderMainFragment' )}( this._state, this );
 			if ( options.target ) this._fragment.mount( options.target, null );
 		` );
 	}
@@ -313,9 +314,9 @@ export default function dom ( parsed, source, options, names ) {
 	if ( templateProperties.oncreate ) {
 		builders.init.addBlock( deindent`
 			if ( options._root ) {
-				options._root._renderHooks.push({ fn: ${generator.alias( 'template' )}.oncreate, context: this });
+				options._root._renderHooks.push({ fn: ${getGlobalAlias( 'template' )}.oncreate, context: this });
 			} else {
-				${generator.alias( 'template' )}.oncreate.call( this );
+				${getGlobalAlias( 'template' )}.oncreate.call( this );
 			}
 		` );
 	}
@@ -326,12 +327,12 @@ export default function dom ( parsed, source, options, names ) {
 	if ( generator.usesRefs ) constructorBlock.addLine( `this.refs = {};` );
 
 	constructorBlock.addLine(
-		`this._state = ${templateProperties.data ? `Object.assign( ${generator.alias( 'template' )}.data(), options.data )` : `options.data || {}`};`
+		`this._state = ${templateProperties.data ? `Object.assign( ${getGlobalAlias( 'template' )}.data(), options.data )` : `options.data || {}`};`
 	);
 
 	if ( templateProperties.computed ) {
 		constructorBlock.addLine(
-			`${generator.alias( 'applyComputations' )}( this._state, this._state, {}, true );`
+			`${getGlobalAlias( 'applyComputations' )}( this._state, this._state, {}, true );`
 		);
 	}
 
@@ -374,11 +375,11 @@ export default function dom ( parsed, source, options, names ) {
 	const sharedPath = options.shared === true ? 'svelte/shared.js' : options.shared;
 
 	if ( sharedPath ) {
-		const base = templateProperties.methods ? `{}, ${generator.alias( 'template' )}.methods` : `{}`;
+		const base = templateProperties.methods ? `{}, ${getGlobalAlias( 'template' )}.methods` : `{}`;
 		builders.main.addBlock( `${name}.prototype = Object.assign( ${base}, ${generator.helper( 'proto' )} );` );
 	} else {
 		if ( templateProperties.methods ) {
-			builders.main.addBlock( `${name}.prototype = ${generator.alias( 'template' )}.methods;` );
+			builders.main.addBlock( `${name}.prototype = ${getGlobalAlias( 'template' )}.methods;` );
 		}
 
 		[ 'get', 'fire', 'observe', 'on', 'set', '_flush' ].forEach( methodName => {
@@ -393,7 +394,7 @@ export default function dom ( parsed, source, options, names ) {
 		};
 
 		${name}.prototype.teardown = ${name}.prototype.destroy = function destroy ( detach ) {
-			this.fire( 'destroy' );${templateProperties.ondestroy ? `\n${generator.alias( 'template' )}.ondestroy.call( this );` : ``}
+			this.fire( 'destroy' );${templateProperties.ondestroy ? `\n${getGlobalAlias( 'template' )}.ondestroy.call( this );` : ``}
 
 			this._fragment.teardown( detach !== false );
 			this._fragment = null;
@@ -409,16 +410,16 @@ export default function dom ( parsed, source, options, names ) {
 		}
 
 		const names = Array.from( generator.uses ).map( name => {
-			return name !== generator.aliases.get( name ) ? `${name} as ${generator.aliases.get( name )}` : name;
+			return name !== getGlobalAlias( name ) ? `${name} as ${getGlobalAlias( name )}` : name;
 		});
 
 		builders.main.addLineAtStart(
-			`import { ${names.join( ', ' )} } from ${JSON.stringify( sharedPath )}`
+			`import { ${names.join( ', ' )} } from ${JSON.stringify( sharedPath )};`
 		);
 	} else {
 		generator.uses.forEach( key => {
 			const fn = shared[ key ]; // eslint-disable-line import/namespace
-			builders.main.addBlock( fn.toString().replace( /^function [^(]*/, 'function ' + generator.aliases.get( key ) ) );
+			builders.main.addBlock( fn.toString().replace( /^function [^(]*/, 'function ' + getGlobalAlias( key ) ) );
 		});
 	}
 

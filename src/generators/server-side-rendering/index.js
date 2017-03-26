@@ -4,10 +4,11 @@ import flattenReference from '../../utils/flattenReference.js';
 import processCss from '../shared/processCss.js';
 import visitors from './visitors/index.js';
 import Generator from '../Generator.js';
+import { getGlobalAlias } from '../shared/utils/aliaser.js';
 
 class SsrGenerator extends Generator {
-	constructor ( parsed, source, name, names, visitors, options ) {
-		super( parsed, source, name, names, visitors, options );
+	constructor ( parsed, source, name, visitors, options ) {
+		super( parsed, source, name, visitors, options );
 		this.bindings = [];
 		this.renderCode = '';
 	}
@@ -35,11 +36,11 @@ class SsrGenerator extends Generator {
 	}
 }
 
-export default function ssr ( parsed, source, options, names ) {
+export default function ssr ( parsed, source, options ) {
 	const format = options.format || 'cjs';
 	const name = options.name || 'SvelteComponent';
 
-	const generator = new SsrGenerator( parsed, source, name, names, visitors, options );
+	const generator = new SsrGenerator( parsed, source, name, visitors, options );
 
 	const { computations, templateProperties } = generator.parseJs();
 
@@ -60,12 +61,12 @@ export default function ssr ( parsed, source, options, names ) {
 	parsed.html.children.forEach( node => generator.visit( node ) );
 
 	builders.render.addLine(
-		templateProperties.data ? `root = Object.assign( ${generator.alias( 'template' )}.data(), root || {} );` : `root = root || {};`
+		templateProperties.data ? `root = Object.assign( ${getGlobalAlias( 'template' )}.data(), root || {} );` : `root = root || {};`
 	);
 
 	computations.forEach( ({ key, deps }) => {
 		builders.render.addLine(
-			`root.${key} = ${generator.alias( 'template' )}.computed.${key}( ${deps.map( dep => `root.${dep}` ).join( ', ' )} );`
+			`root.${key} = ${getGlobalAlias( 'template' )}.computed.${key}( ${deps.map( dep => `root.${dep}` ).join( ', ' )} );`
 		);
 	});
 
@@ -118,7 +119,7 @@ export default function ssr ( parsed, source, options, names ) {
 		` );
 
 		templateProperties.components.value.properties.forEach( prop => {
-			builders.renderCss.addLine( `addComponent( ${generator.alias( 'template' )}.components.${prop.key.name} );` );
+			builders.renderCss.addLine( `addComponent( ${getGlobalAlias( 'template' )}.components.${prop.key.name} );` );
 		});
 	}
 
@@ -140,7 +141,7 @@ export default function ssr ( parsed, source, options, names ) {
 		${name}.filename = ${JSON.stringify( options.filename )};
 
 		${name}.data = function () {
-			return ${templateProperties.data ? `${generator.alias( 'template' )}.data()` : `{}`};
+			return ${templateProperties.data ? `${getGlobalAlias( 'template' )}.data()` : `{}`};
 		};
 
 		${name}.render = function ( root, options ) {

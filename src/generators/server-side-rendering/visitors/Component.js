@@ -1,4 +1,5 @@
 import flattenReference from '../../../utils/flattenReference.js';
+import { getGlobalAlias } from '../../shared/utils/aliaser.js';
 
 export default {
 	enter ( generator, node ) {
@@ -50,7 +51,7 @@ export default {
 			}))
 			.join( ', ' );
 
-		const expression = node.name === ':Self' ? generator.name : `${generator.alias( 'template' )}.components.${node.name}`;
+		const expression = node.name === ':Self' ? generator.name : `${getGlobalAlias( 'template' )}.components.${node.name}`;
 
 		bindings.forEach( binding => {
 			generator.addBinding( binding, expression );

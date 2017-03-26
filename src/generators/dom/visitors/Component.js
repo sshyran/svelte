@@ -1,6 +1,7 @@
 import deindent from '../../../utils/deindent.js';
 import CodeBuilder from '../../../utils/CodeBuilder.js';
 import addComponentAttributes from './attributes/addComponentAttributes.js';
+import { getGlobalAlias } from '../../shared/utils/aliaser.js';
 
 function capDown ( name ) {
 	return `${name[0].toLowerCase()}${name.slice( 1 )}`;
@@ -106,7 +107,7 @@ export default {
 			componentInitProperties.push(`data: ${name}_initialData`);
 		}
 
-		const expression = node.name === ':Self' ? generator.name : generator.importedComponents.get( node.name ) || `${generator.alias( 'template' )}.components.${node.name}`;
+		const expression = node.name === ':Self' ? generator.name : generator.importedComponents.get( node.name ) || `${getGlobalAlias( 'template' )}.components.${node.name}`;
 
 		local.init.addBlockAtStart( deindent`
 			${statements.join( '\n\n' )}

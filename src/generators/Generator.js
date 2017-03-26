@@ -1,19 +1,18 @@
 import MagicString, { Bundle } from 'magic-string';
 import { walk } from 'estree-walker';
 import isReference from '../utils/isReference.js';
-import counter from './shared/utils/counter.js';
 import flattenReference from '../utils/flattenReference.js';
 import globalWhitelist from '../utils/globalWhitelist.js';
 import getIntro from './shared/utils/getIntro.js';
 import getOutro from './shared/utils/getOutro.js';
 import annotateWithScopes from './annotateWithScopes.js';
+import { initAliaser, getGlobalAlias, getUniqueGlobalAlias } from './shared/utils/aliaser.js';
 
 export default class Generator {
-	constructor ( parsed, source, name, names, visitors, options ) {
+	constructor ( parsed, source, name, visitors, options ) {
 		this.parsed = parsed;
 		this.source = source;
 		this.name = name;
-		this.names = names;
 		this.visitors = visitors;
 		this.options = options;
 
@@ -31,15 +30,13 @@ export default class Generator {
 		this.elementDepth = 0;
 
 		this.code = new MagicString( source );
-		this.getUniqueName = counter( names );
+		this.getUniqueName = getUniqueGlobalAlias;
 		this.cssId = parsed.css ? `svelte-${parsed.hash}` : '';
 		this.usesRefs = false;
 
 		// allow compiler to deconflict user's `import { get } from 'whatever'` and
 		// Svelte's builtin `import { get, ... } from 'svelte/shared.js'`;
 		this.importedNames = new Set();
-
-		this.aliases = new Map();
 
 		this._callbacks = new Map();
 	}
@@ -53,20 +50,6 @@ export default class Generator {
 		});
 	}
 
-	alias ( name ) {
-		if ( !( this.aliases.has( name ) ) ) {
-			let alias = name;
-			let i = 1;
-			while ( alias in this.importedNames ) {
-				alias = `${name}$${i++}`;
-			}
-
-			this.aliases.set( name, alias );
-		}
-
-		return this.aliases.get( name );
-	}
-
 	contextualise ( expression, isEventHandler ) {
 		this.addSourcemapLocations( expression );
 
@@ -77,8 +60,6 @@ export default class Generator {
 		const { contextDependencies, contexts, indexes } = this.current;
 
 		let scope = annotateWithScopes( expression );
-
-		const self = this;
 
 		walk( expression, {
 			enter ( node, parent, key ) {
@@ -92,7 +73,7 @@ export default class Generator {
 					if ( scope.has( name ) ) return;
 
 					if ( parent && parent.type === 'CallExpression' && node === parent.callee && helpers.has( name ) ) {
-						code.prependRight( node.start, `${self.alias( 'template' )}.helpers.` );
+						code.prependRight( node.start, `${getGlobalAlias( 'template' )}.helpers.` );
 					}
 
 					else if ( name === 'event' && isEventHandler ) {
@@ -124,7 +105,7 @@ export default class Generator {
 							}
 						}
 
-						if ( globalWhitelist[ name ] ) {
+						if ( globalWhitelist.has( name ) ) {
 							code.prependRight( node.start, `( '${name}' in root ? root.` );
 							code.appendLeft( node.object ? node.object.end : node.end, ` : ${name} )` );
 						} else {
@@ -244,10 +225,6 @@ export default class Generator {
 		};
 	}
 
-	getUniqueNameMaker () {
-		return counter( this.names );
-	}
-
 	parseJs () {
 		const { source } = this;
 		const { js } = this.parsed;
@@ -272,10 +249,12 @@ export default class Generator {
 					imports.push( node );
 					this.code.remove( a, b );
 					node.specifiers.forEach( specifier => {
-						this.importedNames[ specifier.local.name ] = true;
+						this.importedNames.add( specifier.local.name );
 					});
 				}
 			}
+
+			initAliaser( this );
 
 			defaultExport = js.content.body.find( node => node.type === 'ExportDefaultDeclaration' );
 
@@ -287,7 +266,7 @@ export default class Generator {
 				} else {
 					const { declarations } = annotateWithScopes( js );
 					let template = 'template';
-					for ( let i = 1; declarations.has( template ); template = `template$${i++}` );
+					for ( let c = 1; declarations.has( template ); template = `template$${c++}` );
 
 					this.code.overwrite( defaultExport.start, defaultExport.declaration.start, `var ${template} = ` );
 
@@ -302,7 +281,7 @@ export default class Generator {
 					templateProperties[ prop.key.name ] = prop;
 				});
 
-				this.code.prependRight( js.content.start, `var ${this.alias( 'template' )} = (function () {` );
+				this.code.prependRight( js.content.start, `var ${getGlobalAlias( 'template' )} = (function () {` );
 			} else {
 				this.code.prependRight( js.content.start, '(function () {' );
 			}

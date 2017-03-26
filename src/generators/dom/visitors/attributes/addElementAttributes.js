@@ -3,6 +3,7 @@ import addElementBinding from './addElementBinding';
 import deindent from '../../../../utils/deindent.js';
 import flattenReference from '../../../../utils/flattenReference.js';
 import getStaticAttributeValue from './binding/getStaticAttributeValue.js';
+import { getGlobalAlias } from '../../../shared/utils/aliaser.js';
 
 export default function addElementAttributes ( generator, node, local ) {
 	node.attributes.forEach( attribute => {
@@ -182,7 +183,7 @@ export default function addElementAttributes ( generator, node, local ) {
 
 			if ( generator.events.has( name ) ) {
 				local.init.addBlock( deindent`
-					var ${handlerName} = ${generator.alias( 'template' )}.events.${name}.call( component, ${local.name}, function ( event ) {
+					var ${handlerName} = ${getGlobalAlias( 'template' )}.events.${name}.call( component, ${local.name}, function ( event ) {
 						${handlerBody}
 					});
 				` );
